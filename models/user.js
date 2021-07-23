@@ -15,6 +15,7 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING(100),
             allowNull: false,
         },
+        //createdAt, updatedAt은 sequelize가 알아서 관리해준다.
     }, {
         charset: 'utf8',
         collate: 'utf8_general_ci',
@@ -24,7 +25,7 @@ module.exports = (sequelize, DataTypes) => {
         db.User.hasMany(db.Comment);
         db.User.belongsToMany(db.Post, {through: 'Like', as: 'Liked' })
         db.User.belongsToMany(db.User, {through: 'Follow', as: 'Followers' , foreignKey: 'FollowingId' }); 
-        db.user.belongsToMany(db.User, {through: 'Follow', as: 'Followings', foreignKey: 'FollowerId' });
+        db.User.belongsToMany(db.User, {through: 'Follow', as: 'Followings', foreignKey: 'FollowerId' });
         //through : 테이블 이름 변경, foreignKey: 컬럼 키이름 변경
 
     };
