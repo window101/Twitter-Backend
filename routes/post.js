@@ -90,6 +90,48 @@ router.post('/images', isLoggedIn, upload.array('image'), async(req, res, next) 
     res.json(req.files.map((v) => v.filename));
 });
 
+router.get('/:postId', async (req, res, next) => {  // 특정 게시글 불러오기
+    try {
+        const post = await Post.findOne({
+            where: {id: req.params.postId},
+        });
+        if(!post) {
+            return res.status(404).send('존재하지 않는 게시글입니다.');
+        }
+        const fullPost = await Post.findOne({
+            where: {id: post.id},
+            include: [{
+                model: Post,
+                as: 'Retweet',
+                include: [{
+                    model: User,
+                    attributes: ['id', 'nickname'],
+                }, {
+                    model: Image,
+                }]
+            }, {
+                model: User,
+                attributes: ['id', 'nickname']
+            }, {
+                model: User,
+                as: 'Likers',
+                attributes: ['id', 'nickname'],
+            }, {
+                model: Image,
+            }, {
+                model: Comment,
+                include: [{
+                    model: User,
+                    attributes: ['id', 'nickname'],
+                }]
+            }]
+        })
+        return res.status(201).json(fullPost);
+    }catch(err) {
+        console.error(err);
+        next(err);
+    } 
+});
 
 router.post('/:postId/comment', isLoggedIn , async(req, res, next) => {  // POST /1/comment  댓글작성
     try {

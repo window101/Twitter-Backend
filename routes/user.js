@@ -1,9 +1,9 @@
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const  { User, Post } = require('../models');
+const  { User, Post, Image, Comment } = require('../models');
 const { isLoggedIn, isNotLoggedIn } = require('./middlewares');
-
+const { Op } = require('sequelize');
 const passport = require('passport');
 
 const router = express.Router();
@@ -43,6 +43,92 @@ router.get('/', async (req, res, next) => {   // 새로고침할 때, 프론트�
     
 })  
 
+router.get('/:userId(\\d+)', async (req, res, next) => {    // 특정 사용자 정보 가져오기
+   
+    try {
+        const fullUserWithoutPass = await User.findOne({
+            where: { id: req.params.userId },
+            attributes: {
+                exclude: ['password']
+            },
+            include: [{
+                model: Post,
+                attributes: ['id'],
+            }, {
+                model: User,
+                as: 'Followings',
+                attributes: ['id'],
+            }, {
+                model: User,
+                as: 'Followers',
+                attributes: ['id'],
+
+            }]
+        });
+        if(fullUserWithoutPass) {
+            const data = fullUserWithoutPass.toJSON(); // sequelize에서 온 데이터를 먼저 JSON으로 바꾼다
+            data.Posts = data.Posts.length;
+            data.Followers = data.Followers.length;
+            data.Followings = data.Followings.length;        // 남의 정보 자세히 못보게 length로 변경(보안)
+            return res.status(200).json(fullUserWithoutPass);
+        }else {
+            res.status(404).json('존재하지 않는 사용자입니다.');
+        }
+    }catch(err) {
+        console.error(err);
+        next(err);
+    }
+    
+})  
+
+router.get('/:userId(\\d+)/posts', async (req, res, next) => {   // GET /user/1/posts 특정 사용자 게시글 가져오기
+    try {
+        const where = { UserId: req.params.userId};
+        if(parseInt(req.query.lastId, 10)) { //초기 로딩이 아닐때
+            where.id = { [Op.lt]: parseInt(req.query.lastId, 10) }
+        }
+        const posts = await Post.findAll({
+            where,
+            limit: 10,
+            order: [
+                ['createdAt', 'DESC'],
+                [Comment, 'createdAt', 'DESC'],  // 댓글 내림차순 정렬
+            ],
+            include: [{
+                model: User,
+                attributes: ['id', 'nickname'],
+            }, {
+                model: Image,
+            }, {
+                model: Comment,
+                include:[{
+                    model: User,
+                    attributes: ['id', 'nickname'],
+                    order: [['createdAt', 'DESC']],
+                }],
+            }, {
+                model: User,  // 좋아요 누른 사람
+                as: 'Likers',
+                attributes: ['id'],
+            }, {
+                model: Post,
+                as: 'Retweet',
+                include: [{
+                    model: User,
+                    attributes: ['id', 'nickname'],
+                }, {
+                    model: Image,
+                }]
+            }], 
+
+        });
+        res.status(200).json(posts);
+    }catch(err) {
+        console.error(err);
+        next(err);
+    }
+    
+});
 router.post('/login', isNotLoggedIn, (req, res, next) => {
     passport.authenticate('local', (err, user, info) => {
         if(err) {
@@ -139,7 +225,7 @@ router.patch('/:userId/follow', isLoggedIn, async(req, res, next) => { // PATCH 
     }
 });
 
-router.delete('/:userId/follow', isLoggedIn, async(req, res, next) => { // DELETE /user/1/follow  =>  userid의 입장에서 나를 팔로워로 제거
+router.delete('/:userId(\\d+)/follow', isLoggedIn, async(req, res, next) => { // DELETE /user/1/follow  =>  userid의 입장에서 나를 팔로워로 제거
     try {
         const user = await User.findOne({ where: {id: req.params.userId }});
         if(!user) {
@@ -153,7 +239,7 @@ router.delete('/:userId/follow', isLoggedIn, async(req, res, next) => { // DELET
     }
 });
 
-router.delete('/follower/:userId', isLoggedIn, async(req, res, next) => { // DELETE /user/follower/2 => userid의 입장에서 나를 팔로잉으로 제거
+router.delete('/follower/:userId(\\d+)', isLoggedIn, async(req, res, next) => { // DELETE /user/follower/2 => userid의 입장에서 나를 팔로잉으로 제거
     try {
         const user = await User.findOne({ where: {id: req.params.userId }});
         if(!user) {
