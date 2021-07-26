@@ -6,6 +6,7 @@ const { isLoggedIn, isNotLoggedIn } = require('./middlewares');
 const { Op } = require('sequelize');
 const passport = require('passport');
 
+
 const router = express.Router();
 
 

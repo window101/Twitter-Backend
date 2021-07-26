@@ -6,25 +6,33 @@ const fs = require('fs');
 const { Image, Post, Comment, User, Hashtag } = require('../models');
 const { isLoggedIn, isNotLoggedIn } = require('./middlewares');
 
+const multerS3 = require('multer-s3');
+const AWS = require('aws-sdk');
 
 const router = express.Router();
 
+/*
 try {
     fs.accessSync('uploads', constants.R_OK | constants.W_OK);
 }catch(error) {
     fs.mkdirSync('uploads');
 }
+*/
+
+
+AWS.config.update({
+    accessKeyId: process.env.S3_ACCESS_KEY_ID,
+    secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
+    region: 'ap-northeast-2',
+})
 
 const upload = multer({   // 각각의 라우터마다 단일 이미지, 여러개 이미지 업로드하는 것과 같이 다르기 때문에 라우터마다 설정해준다.
-    storage: multer.diskStorage({
-        destination(req, file, done) {
-            done(null, 'uploads');
-        },
-        filename(req, file, done) {
-            const ext = path.extname(file.originalname); // 확장자 추출(.png)
-            const basename = path.basename(file.originalname, ext); // 파일 이름 추출
-            done(null, basename + '_' + new Date().getTime() + ext);
-        },
+    storage: multerS3({
+        s3: new AWS.S3(),
+        bucket: 'react-nodebird-s3',
+        key(req, file, cb) {
+            cb(null, `original/${Date.now()}_${path.basename(file.originalname)}`)
+        }
     }),
     limits: { fileSize: 20 * 1024 * 1024 },
 });
@@ -87,7 +95,7 @@ router.post('/images', isLoggedIn, upload.array('image'), async(req, res, next) 
     */
     //console.log(req.files);
 
-    res.json(req.files.map((v) => v.filename));
+    res.json(req.files.map((v) => v.location.replace(/\/original\//, '/thumb/')));  // 리사이징된 이미지를 프론트로 보냄
 });
 
 router.get('/:postId', async (req, res, next) => {  // 특정 게시글 불러오기
@@ -253,6 +261,31 @@ router.delete('/:postId/like', isLoggedIn, async (req, res, next) => {  // DELET
         next(error);
     }
 })
+
+router.patch('/:postId', async (req, res, next) => {   // PATCH /post/10
+    const hashtags = req.body.content.match(/#[^\s#]+/g);
+    try {
+        await Post.update({
+            content: req.body.content,
+        }, {
+            where: { 
+                id: req.params.postId,
+                UserId: req.user.id,   
+            },
+        });
+        const post = await Post.findOne({ where: {id: req.params.postId }});
+        if(hashtags) {
+            const result = await Promise.all(hashtags.map((tag) => Hashtag.findOrCreate({ 
+                where: {name: tag.slice(1).toLowerCase() },
+            }))); // 없을때만 등록 [[노드, true], [익스프레스, false]]
+            await post.setHashtags(result.map((v) => v[0])); // 해쉬태그 수정
+        }
+        res.status(200).json({ PostId: parseInt(req.params.postId, 10), content: req.body.content });
+    }catch(err) {
+        console.error(err);
+        next(err);
+    }
+});
 
 router.delete('/:postId', async (req, res, next) => {  // DELETE /post/10 
     try {
